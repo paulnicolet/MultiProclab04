@@ -46,6 +46,7 @@ architecture rtl of CacheController is
 
   ------------------------------ Signals we added ------------------------------
   -- datapath independant signals
+  signal busDataWord              : data_word_t;
   signal busWillInvalidate        : std_logic;
   signal currReqWillInvalidate    : std_logic;
   signal cpuReqRegWillInvalidate  : std_logic:
@@ -162,22 +163,62 @@ begin  -- architecture rtl
     case cacheSt is
       when ST_IDLE =>
         if (cacheCs = '0' or cacheWrite = '0') then
-          cacheStNext <= ST_IDLE -- not necessary but to make sure we don't forget stuff
+          cacheStNext   <= ST_IDLE -- not necessary but to make sure we don't forget stuff
         elsif (cacheCs = '1' and cacheWrite = '1') then
+          cacheStNext   <= ST_WR_HIT_TEST;
           cpuReqRegWrEn <= '1';
           dataArrayAddr <= cacheAddr;
-          tagAddr <= cacheAddr;
-          tagLookupEn <= '1';
+          tagAddr       <= cacheAddr;
+          tagLookupEn   <= '1';
+        elsif (cacheCs = '1' and cacheRead = '1') then
+          cacheStNext   <= ST_RD_HIT_TEST;
+          cpuReqRegWrEn <= '1';
+          dataArrayAddr <= cacheAddr;
+          tagAddr       <= cacheAddr;
+          tagLookupEn   <= '1';
         end if;
 
       -----------------------------------------------------------------------
       -- Rdb state machine
       -----------------------------------------------------------------------
       when ST_RD_HIT_TEST =>
+        if (tagHitEn = '1' and cpuReqRegWillInvalidate = '0') then 
+          cacheStNext   <= ST_IDLE;
+          cacheDone     <= '1';
+          cacheRdOutEn  <= '1';
+          cacheRdData   <= dataArrayRdData(to_integer(unsigned(tagHitSet)))(to_integer(unsigned(cpuReqRegAddr(0))));
+        elsif (tagHitEn = '0' or cpuReqRegWillInvalidate = '1') then
+          cacheStNext   <= ST_RD_WAIT_BUS_GRANT;
+          victimRegWrEn <= '1';
+        end if;
 
       when ST_RD_WAIT_BUS_GRANT =>
+        if busGrant = '0' then 
+          cacheStNext <= cacheSt;
+          busReq      <= '1';
+        else
+          cacheStNext <= ST_RD_WAIT_BUS_COMPLETE;
+          busReq      <= '1';
+          busOutEn    <= '1';
+          busCmd      <= BUS_READ;
+          busAddrIn   <= cpuReqRegAddr;
+        end if;
 
       when ST_RD_WAIT_BUS_COMPLETE =>
+        if busGrant = '1' then 
+          cacheStNext       <= cacheSt;
+        else
+          cacheStNext       <= ST_IDLE;
+          cacheDone         <= '1';
+          cacheRdOutEn      <= '1';
+          cacheRdDataIn     <= busDataWord;
+          tagWrEn           <= '1';
+          tagWrSet          <= victimRegSet;
+          tagAddr           <= cpuReqRegAddr;
+          dataArrayWrSetIdx <= victimRegSet;
+          dataArrayWrWord   <= '1';
+          dataArrayWrData   <= busData;
+        end if;
 
       -----------------------------------------------------------------------
       -- wr state machine
@@ -236,6 +277,7 @@ begin  -- architecture rtl
     end case;
 
     --Datapath extensions (3 boxes at the bottom of the PDF)
+    busDataWord             <= busData(to_integer(unsigned(cpuReqRegAddr(0))));
     busWillInvalidate       <= (busCmd = BUS_WRITE) and busSnoopValid and (not busGrant);
     currReqWillInvalidate   <= (cacheAddr = busAddr) and busWillInvalidate;
     cpuReqRegWillInvalidate <= ((cpuReqRegAddr = busAddr) and busWillInvalidate) or cpuReqRegWasInvalidated;
