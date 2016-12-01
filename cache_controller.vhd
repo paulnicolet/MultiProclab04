@@ -49,7 +49,7 @@ architecture rtl of CacheController is
   signal busDataWord              : data_word_t;
   signal busWillInvalidate        : std_logic;
   signal currReqWillInvalidate    : std_logic;
-  signal cpuReqRegWillInvalidate  : std_logic:
+  signal cpuReqRegWillInvalidate  : std_logic;
 
   -- cpuRegReq input/output
   signal cpuReqRegWrEn            : std_logic;
@@ -60,7 +60,11 @@ architecture rtl of CacheController is
   signal cpuReqRegWasInvalidated   : std_logic;
   signal cpuReqRegWord            : std_logic;
   signal cpuReqRegData            : data_block_t;
+	
+  -- QUENTIN
+  signal cpuReqRegAddr          : std_logic_vector(WORD_ADDR_WIDTH-1 downto 0);
 
+  
   -- VictimReg input/output
   signal victimRegWrEn            : std_logic;
   signal victimRegSetIn           : std_logic_vector(SET_ADDR_WIDTH-1 downto 0);
@@ -163,7 +167,7 @@ begin  -- architecture rtl
     case cacheSt is
       when ST_IDLE =>
         if (cacheCs = '0' or cacheWrite = '0') then
-          cacheStNext   <= ST_IDLE -- not necessary but to make sure we don't forget stuff
+          cacheStNext   <= ST_IDLE; -- not necessary but to make sure we don't forget stuff
         elsif (cacheCs = '1' and cacheWrite = '1') then
           cacheStNext   <= ST_WR_HIT_TEST;
           cpuReqRegWrEn <= '1';
@@ -231,7 +235,7 @@ begin  -- architecture rtl
           dataArrayWrEn     <= '1';
           dataArrayWrWord   <= '1';
           dataArrayWrSetIdx <= tagHitSet;
-          dataArrayWrData   <= x"0000" & cpuReqRegData;
+          dataArrayWrData   <= X"0000" & cpuReqRegData;
         end if;
 
       when ST_WR_WAIT_BUS_GRANT =>
@@ -278,9 +282,28 @@ begin  -- architecture rtl
 
     --Datapath extensions (3 boxes at the bottom of the PDF)
     busDataWord             <= busData(to_integer(unsigned(cpuReqRegAddr(0))));
-    busWillInvalidate       <= (busCmd = BUS_WRITE) and busSnoopValid and (not busGrant);
-    currReqWillInvalidate   <= (cacheAddr = busAddr) and busWillInvalidate;
-    cpuReqRegWillInvalidate <= ((cpuReqRegAddr = busAddr) and busWillInvalidate) or cpuReqRegWasInvalidated;
+	
+	if (busCmd = BUS_WRITE) and (busSnoopValid = '1') and (busGrant = '0') then
+		busWillInvalidate <= '1';
+	else
+		busWillInvalidate <= '0';
+	end if;
+   -- busWillInvalidate       <= (busCmd = BUS_WRITE) and busSnoopValid and (not busGrant);
+   
+   if (cacheAddr = busAddr) and (busWillInvalidate <= '1') then
+		currReqWillInvalidate <= '1';
+   else
+		currReqWillInvalidate <= '0';
+   end if;
+   -- currReqWillInvalidate   <= (cacheAddr = busAddr) and busWillInvalidate;
+   
+   if ((cpuReqRegAddr = busAddr) and (busWillInvalidate = '1')) or (cpuReqRegWasInvalidated = '1') then 
+		cpuReqRegWillInvalidate <= '1';
+   else
+		cpuReqRegWillInvalidate <= '0';
+   end if;
+   -- cpuReqRegWillInvalidate <= ((cpuReqRegAddr = busAddr) and busWillInvalidate) or cpuReqRegWasInvalidated;
+  
   end process comb_proc;
 
   ---------------------------- Component mapping -------------------------------
@@ -333,7 +356,7 @@ begin  -- architecture rtl
    cpuReqRegWrEn              => cpuReqRegWrEn,
    cpuReqRegAddrIn            => cacheAddr,
    cpuReqRegDataIn            => cacheWrData,
-   cpuReqRegWasInvalidatedIn  => currReqWillInvalidated, -- TODO : currReqWillInvalidate in the pdf, wouldn't it be more logical with cpuReqRegWillInvalidate ?
+   cpuReqRegWasInvalidatedIn  => currReqWillInvalidate, -- TODO : currReqWillInvalidate in the pdf, wouldn't it be more logical with cpuReqRegWillInvalidate ?
    cpuReqRegAddr              => cpuReqRegAddr,
    cpuReqRegWasInvalidated    => cpuReqRegWasInvalidated, 
    cpuReqRegData              => cpuReqRegData
