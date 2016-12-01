@@ -49,10 +49,13 @@ architecture rtl of CacheController is
   signal busAddrIn : std_logic_vector(WORD_ADDR_WIDTH-1 downto 0);
   signal busCmdIn  : bus_cmd_t;
   signal busDataIn : data_block_t;
+
+  -- SIGNALS ADDED BY US 
+  signal busWillInvalidate : std_logic;
 -- 
 begin  -- architecture rtl
 
-  comb_proc : process () is
+  comb_proc : process (snoopSt, busWillInvalidate) is
   begin  -- process comb_proc
     -- signals that need initialization
     cacheStNext <= cacheSt;
@@ -119,11 +122,21 @@ begin  -- architecture rtl
     tagInvEn    <= '0';
     case snoopSt is
       when ST_SNOOP_IDLE =>
+        if busWillInvalidate = '1' then
+          snoopStNext <= ST_SNOOP_INVALIDATING;
+          tagInvEn <= '1';
+        end if;
+
       when ST_SNOOP_INVALIDATING =>
+        snoopStNext <= ST_SNOOP_IDLE;
+        
       when others => null;
     end case;
 
-    -- datapath:
+    -- datapath: BY US
+    busWillInvalidate <= (busCmd = BUS_WRITE) and busSnoopValid and (not busGrant);
+
+
   end process comb_proc;
 
   TagArray_1 : TagArray
