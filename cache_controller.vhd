@@ -124,7 +124,7 @@ begin  -- architecture rtl
   
   ---------------------------- Combinational process --------------------------- 
 
-  comb_proc : process (snoopSt, busWillInvalidate) is
+  comb_proc : process (cacheSt, snoopSt, busWillInvalidate) is
   begin  -- process comb_proc
     -- signals that need initialization
     cacheStNext <= cacheSt;
@@ -183,10 +183,36 @@ begin  -- architecture rtl
       -- wr state machine
       -----------------------------------------------------------------------
       when ST_WR_HIT_TEST =>
+        if (tagHitEn = '0' or cpuReqRegWillInvalidate = '1') then 
+          cacheStNext <= ST_WR_WAIT_BUS_GRANT;
+        elsif (tagHitEn = '1' and cpuReqRegWillInvalidate = '0') then
+          cacheStNext       <= ST_WR_WAIT_BUS_GRANT;
+          dataArrayWrEn     <= '1';
+          dataArrayWrWord   <= '1';
+          dataArrayWrSetIdx <= tagHitSet;
+          dataArrayWrData   <= x"0000" & cpuReqRegData;
+        end if;
 
       when ST_WR_WAIT_BUS_GRANT =>
-
+        if busGrant = '0' then
+          cacheStNext <= ST_WR_WAIT_BUS_GRANT;
+          busReq <= '1';
+        else
+          cacheStNext <= ST_WR_WAIT_BUS_COMPLETE;
+          busReq      <= '1';
+          busOutEn    <= '1';
+          busCmd      <= BUS_WRITE;
+          busAddrIn   <= cpuReqRegAddr;
+          busDataIn   <=cpuReqRegData;
+        end if;
+          
       when ST_WR_WAIT_BUS_COMPLETE =>
+        if busGrant = '1' then 
+          cacheStNext <= ST_WR_WAIT_BUS_COMPLETE;
+        else
+          cacheStNext <= ST_IDLE;
+          cacheDone <= '1';
+        end if;
 
       when others => null;
     end case;
