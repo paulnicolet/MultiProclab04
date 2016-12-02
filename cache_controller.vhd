@@ -129,7 +129,8 @@ begin  -- architecture rtl
   
   ---------------------------- Combinational process --------------------------- 
 
-  comb_proc : process (cacheSt, snoopSt, busWillInvalidate) is
+  comb_proc : process (cacheSt, snoopSt, busWillInvalidate, cacheCs, cacheRead, 
+					cacheWrite, tagHitEn, cpuReqRegWillInvalidate, busGrant) is
   begin  -- process comb_proc
     -- signals that need initialization
     cacheStNext <= cacheSt;
@@ -146,6 +147,7 @@ begin  -- architecture rtl
     cacheDone       <= '0';
     busReq          <= '0';
 
+	
 
     -- signals with dont care initialization
     --cacheRdData   <= (others => 'Z');
@@ -166,12 +168,9 @@ begin  -- architecture rtl
     -- control: state machine
     case cacheSt is
       when ST_IDLE =>
-        if (cacheCs = '0' or cacheWrite = '0') then
-          cacheStNext   <= ST_IDLE; -- not necessary but to make sure we don't forget stuff
-        elsif (cacheCs = '1' and cacheWrite = '1') then
+        if (cacheCs = '1' and cacheWrite = '1') then
           cacheStNext   <= ST_WR_HIT_TEST;
           cpuReqRegWrEn <= '1';
-          dataArrayAddr <= cacheAddr;
           tagAddr       <= cacheAddr;
           tagLookupEn   <= '1';
         elsif (cacheCs = '1' and cacheRead = '1') then
@@ -192,9 +191,9 @@ begin  -- architecture rtl
           cacheRdOutEn  <= '1';
 		  
 		  if cpuReqRegAddr(0) = '1' then
-			cacheRdData   <= dataArrayRdData(to_integer(unsigned(tagHitSet)))(1);
+			cacheRdDataIn   <= dataArrayRdData(to_integer(unsigned(tagHitSet)))(1);
 		  else
-			cacheRdData   <= dataArrayRdData(to_integer(unsigned(tagHitSet)))(0);
+			cacheRdDataIn   <= dataArrayRdData(to_integer(unsigned(tagHitSet)))(0);
 		  end if;
           --cacheRdData   <= dataArrayRdData(to_integer(unsigned(tagHitSet)))(to_integer(unsigned(cpuReqRegAddr(0))));
 		  
@@ -211,7 +210,7 @@ begin  -- architecture rtl
           cacheStNext <= ST_RD_WAIT_BUS_COMPLETE;
           busReq      <= '1';
           busOutEn    <= '1';
-          busCmd      <= BUS_READ;
+          busCmdIn    <= BUS_READ;
           busAddrIn   <= cpuReqRegAddr;
         end if;
 
@@ -256,9 +255,9 @@ begin  -- architecture rtl
           cacheStNext <= ST_WR_WAIT_BUS_COMPLETE;
           busReq      <= '1';
           busOutEn    <= '1';
-          busCmd      <= BUS_WRITE;
+          busCmdIn    <= BUS_WRITE;
           busAddrIn   <= cpuReqRegAddr;
-          busDataIn   <=cpuReqRegData;
+          busDataIn   <= cpuReqRegData;
         end if;
           
       when ST_WR_WAIT_BUS_COMPLETE =>
@@ -291,7 +290,7 @@ begin  -- architecture rtl
     end case;
 
     --Datapath extensions (3 boxes at the bottom of the PDF)
-	if cpuReqREgAddr(0) = '1' then
+	if cpuReqRegAddr(0) = '1' then
 		busDataWord <= busData(1);
 	else
 		busDataWord <= busData(0);
@@ -305,14 +304,14 @@ begin  -- architecture rtl
 	end if;
    -- busWillInvalidate       <= (busCmd = BUS_WRITE) and busSnoopValid and (not busGrant);
    
-   if (cacheAddr = busAddr) and (busWillInvalidate <= '1') then
+   if (cacheAddr = busAddr) and (busWillInvalidate = '1') then
 		currReqWillInvalidate <= '1';
    else
 		currReqWillInvalidate <= '0';
    end if;
    -- currReqWillInvalidate   <= (cacheAddr = busAddr) and busWillInvalidate;
    
-   if ((cpuReqRegAddr = busAddr) and (busWillInvalidate = '1')) or (cpuReqRegWasInvalidated = '1') then 
+   if ((getBlockAddr(cpuReqRegAddr) = getBlockAddr(busAddr)) and (busWillInvalidate = '1')) or (cpuReqRegWasInvalidated = '1') then 
 		cpuReqRegWillInvalidate <= '1';
    else
 		cpuReqRegWillInvalidate <= '0';
@@ -387,6 +386,7 @@ begin  -- architecture rtl
 
   clk_proc : process (clk, rst) is
   begin  -- process clk_proc
+
     if rst = '0' then                   -- asynchronous reset (active low)
       cacheSt <= ST_IDLE;
     elsif clk'event and clk = '1' then  -- rising clock edge
