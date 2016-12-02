@@ -190,7 +190,14 @@ begin  -- architecture rtl
           cacheStNext   <= ST_IDLE;
           cacheDone     <= '1';
           cacheRdOutEn  <= '1';
-          cacheRdData   <= dataArrayRdData(to_integer(unsigned(tagHitSet)))(to_integer(unsigned(cpuReqRegAddr(0))));
+		  
+		  if cpuReqRegAddr(0) = '1' then
+			cacheRdData   <= dataArrayRdData(to_integer(unsigned(tagHitSet)))(1);
+		  else
+			cacheRdData   <= dataArrayRdData(to_integer(unsigned(tagHitSet)))(0);
+		  end if;
+          --cacheRdData   <= dataArrayRdData(to_integer(unsigned(tagHitSet)))(to_integer(unsigned(cpuReqRegAddr(0))));
+		  
         elsif (tagHitEn = '0' or cpuReqRegWillInvalidate = '1') then
           cacheStNext   <= ST_RD_WAIT_BUS_GRANT;
           victimRegWrEn <= '1';
@@ -219,8 +226,10 @@ begin  -- architecture rtl
           tagWrEn           <= '1';
           tagWrSet          <= victimRegSet;
           tagAddr           <= cpuReqRegAddr;
+		  dataArrayWrEn 	<= '1';
           dataArrayWrSetIdx <= victimRegSet;
-          dataArrayWrWord   <= '1';
+		  dataArrayAddr		<= cpuReqRegAddr;
+          dataArrayWrWord   <= '0';
           dataArrayWrData   <= busData;
         end if;
 
@@ -234,8 +243,9 @@ begin  -- architecture rtl
           cacheStNext       <= ST_WR_WAIT_BUS_GRANT;
           dataArrayWrEn     <= '1';
           dataArrayWrWord   <= '1';
+		  dataArrayAddr 	<= cpuReqRegAddr;
           dataArrayWrSetIdx <= tagHitSet;
-          dataArrayWrData   <= X"0000" & cpuReqRegData;
+          dataArrayWrData   <= cpuReqRegData;--X"0000" & cpuReqRegData;
         end if;
 
       when ST_WR_WAIT_BUS_GRANT =>
@@ -281,7 +291,12 @@ begin  -- architecture rtl
     end case;
 
     --Datapath extensions (3 boxes at the bottom of the PDF)
-    busDataWord             <= busData(to_integer(unsigned(cpuReqRegAddr(0))));
+	if cpuReqREgAddr(0) = '1' then
+		busDataWord <= busData(1);
+	else
+		busDataWord <= busData(0);
+	end if;
+    --busDataWord             <= busData(to_integer(unsigned(cpuReqRegAddr(0))));
 	
 	if (busCmd = BUS_WRITE) and (busSnoopValid = '1') and (busGrant = '0') then
 		busWillInvalidate <= '1';
